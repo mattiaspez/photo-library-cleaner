@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo Library Cleaner</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      min-height: 100vh;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    header h1 { font-size: 17px; font-weight: 600; }
+    .container { max-width: 960px; margin: 0 auto; padding: 24px; }
+
+    .scan-bar {
+      background: #fff;
+      border-radius: 12px;
+      padding: 18px 20px;
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+    }
+    .scan-bar input {
+      flex: 1;
+      border: 1px solid #d0d0d0;
+      border-radius: 8px;
+      padding: 9px 13px;
+      font-size: 14px;
+      outline: none;
+      font-family: "SF Mono", Menlo, monospace;
+    }
+    .scan-bar input:focus { border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.15); }
+    .btn {
+      padding: 9px 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .btn-primary { background: #0071e3; color: #fff; }
+    .btn-primary:hover { background: #0077ed; }
+    .btn-danger { background: #ff3b30; color: #fff; }
+    .btn-danger:hover { background: #ff453a; }
+    .btn-secondary { background: #e8e8ed; color: #1d1d1f; }
+    .btn-secondary:hover { background: #dcdce0; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .summary {
+      background: #fff;
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+    }
+    .summary h2 { font-size: 13px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+    }
+    .summary-card {
+      background: #f5f5f7;
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .summary-card .label { font-size: 11px; color: #888; margin-bottom: 4px; }
+    .summary-card .value { font-size: 22px; font-weight: 600; }
+    .summary-card .sub { font-size: 12px; color: #999; margin-top: 2px; }
+    .summary-card.total { background: #e8f3fd; }
+    .summary-card.total .value { color: #0071e3; }
+
+    .section {
+      background: #fff;
+      border-radius: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      overflow: hidden;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      padding: 14px 18px;
+      cursor: pointer;
+      user-select: none;
+      gap: 10px;
+    }
+    .section-header:hover { background: #fafafa; }
+    .chevron { font-size: 10px; color: #aaa; transition: transform 0.15s; flex-shrink: 0; }
+    .chevron.open { transform: rotate(90deg); }
+    .section-title { font-weight: 600; font-size: 14px; flex: 1; }
+    .section-meta { font-size: 12px; color: #999; }
+    .select-all-btn {
+      font-size: 12px;
+      background: none;
+      border: 1px solid #d8d8d8;
+      padding: 3px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #444;
+    }
+    .select-all-btn:hover { background: #f0f0f0; }
+
+    .section-body { border-top: 1px solid #f2f2f2; }
+    .section-body.hidden { display: none; }
+
+    .file-list { list-style: none; }
+    .file-item {
+      display: flex;
+      align-items: center;
+      padding: 9px 18px;
+      gap: 11px;
+      border-bottom: 1px solid #f7f7f7;
+    }
+    .file-item:last-child { border-bottom: none; }
+    .file-item:hover { background: #fafafa; }
+    .file-item input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; accent-color: #0071e3; }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-path { font-size: 11px; color: #bbb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+    .file-size { font-size: 12px; color: #999; white-space: nowrap; flex-shrink: 0; }
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .badge-burst { background: #fff3cd; color: #7a5800; }
+    .badge-sidecar { background: #d1f0fa; color: #0a5a78; }
+    .badge-corrupt { background: #fde8e8; color: #9b1c1c; }
+
+    .dup-group {
+      padding: 12px 18px;
+      border-bottom: 1px solid #f2f2f2;
+    }
+    .dup-group:last-child { border-bottom: none; }
+    .dup-group-label { font-size: 11px; color: #bbb; margin-bottom: 8px; }
+    .dup-members { display: flex; flex-direction: column; gap: 8px; }
+    .dup-member {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+    .dup-member input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; accent-color: #0071e3; }
+    .dup-thumb {
+      width: 52px;
+      height: 52px;
+      object-fit: cover;
+      border-radius: 5px;
+      background: #f0f0f0;
+      flex-shrink: 0;
+    }
+    .dup-thumb-placeholder {
+      width: 52px;
+      height: 52px;
+      border-radius: 5px;
+      background: #f0f0f0;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .sticky-footer {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid #e0e0e0;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .selected-info { flex: 1; font-size: 13px; color: #666; }
+    .selected-info strong { color: #1d1d1f; }
+
+    .progress-box {
+      background: #fff;
+      border-radius: 12px;
+      padding: 40px 24px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      margin-bottom: 20px;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #e8e8ed;
+      border-top-color: #0071e3;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin: 0 auto 14px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-box p { font-size: 14px; color: #888; }
+
+    .error-box {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      color: #ff3b30;
+      font-size: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      margin-bottom: 20px;
+    }
+
+    .empty-state {
+      padding: 32px;
+      text-align: center;
+      color: #bbb;
+      font-size: 14px;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-backdrop.hidden { display: none; }
+    .modal {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px;
+      max-width: 380px;
+      width: 90%;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+    }
+    .modal h3 { font-size: 16px; margin-bottom: 10px; }
+    .modal p { font-size: 14px; color: #555; margin-bottom: 22px; line-height: 1.5; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    #results { padding-bottom: 72px; }
+  </style>
+</head>
+<body>
+  <header>
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect width="22" height="22" rx="5" fill="#0071e3"/><path d="M5 16L8.5 11l3 4 2.5-3L18 16H5Z" fill="white"/><circle cx="8" cy="8" r="2" fill="white"/></svg>
+    <h1>Photo Library Cleaner</h1>
+  </header>
+
+  <div class="container">
+    <div class="scan-bar">
+      <input type="text" id="pathInput" placeholder="/Users/you/Pictures/Photos Library" />
+      <button class="btn btn-secondary" id="browseBtn" onclick="browseFolder()">Browse…</button>
+      <button class="btn btn-primary" id="scanBtn" onclick="startScan()">Scan</button>
+    </div>
+
+    <div id="progressBox" class="progress-box" style="display:none">
+      <div class="spinner"></div>
+      <p id="progressMsg">Scanning your library…</p>
+    </div>
+
+    <div id="results"></div>
+  </div>
+
+  <div class="sticky-footer" id="footer" style="display:none">
+    <div class="selected-info">
+      <strong id="selCount">0</strong> files selected &nbsp;&middot;&nbsp;
+      <strong id="selSize">0 B</strong>
+    </div>
+    <button class="btn btn-danger" id="deleteBtn" onclick="confirmDelete()" disabled>Delete Selected</button>
+  </div>
+
+  <div class="modal-backdrop hidden" id="modal">
+    <div class="modal">
+      <h3>Permanently delete files?</h3>
+      <p id="modalMsg"></p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-danger" onclick="doDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let fileRegistry = []; // [{path, size}]
+    let selected = new Set(); // file indices
+    let currentReport = null;
+    let pollTimer = null;
+
+    function reg(path, size) {
+      const idx = fileRegistry.length;
+      fileRegistry.push({ path, size });
+      return idx;
+    }
+
+    function fmt(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+      return (bytes / 1073741824).toFixed(2) + ' GB';
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    async function startScan() {
+      const path = document.getElementById('pathInput').value.trim();
+      if (!path) return;
+
+      fileRegistry = [];
+      selected.clear();
+      currentReport = null;
+
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('footer').style.display = 'none';
+      document.getElementById('progressBox').style.display = 'block';
+      document.getElementById('progressMsg').textContent = 'Scanning your library…';
+      document.getElementById('scanBtn').disabled = true;
+      clearTimeout(pollTimer);
+
+      try {
+        const res = await fetch('/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path }),
+        });
+        const { job_id } = await res.json();
+        pollJob(job_id);
+      } catch (e) {
+        showError(e.message);
+      }
+    }
+
+    function pollJob(jobId) {
+      pollTimer = setTimeout(async () => {
+        try {
+          const res = await fetch('/jobs/' + jobId);
+          const job = await res.json();
+          if (job.status === 'running') {
+            document.getElementById('progressMsg').textContent = 'Computing hashes and finding duplicates…';
+            pollJob(jobId);
+          } else if (job.status === 'done') {
+            document.getElementById('progressBox').style.display = 'none';
+            document.getElementById('scanBtn').disabled = false;
+            currentReport = job.result;
+            renderReport(job.result);
+          } else {
+            showError(job.error || 'Unknown error');
+          }
+        } catch (e) {
+          showError(e.message);
+        }
+      }, 1500);
+    }
+
+    function showError(msg) {
+      document.getElementById('progressBox').style.display = 'none';
+      document.getElementById('scanBtn').disabled = false;
+      document.getElementById('results').innerHTML = `<div class="error-box">Error: ${esc(msg)}</div>`;
+    }
+
+    function renderReport(report) {
+      const folders = Object.values(report.folders);
+      const screenshots = folders.flatMap(f => f.screenshots);
+      const videos = folders.flatMap(f => f.videos);
+      const junk = folders.flatMap(f => f.junk);
+      const photos = folders.flatMap(f => f.photos);
+      const dups = report.duplicates;
+      const s = report.savings;
+
+      // Pre-select screenshots, junk, and smaller duplicates
+      const preSelectPaths = new Set();
+      screenshots.forEach(f => preSelectPaths.add(f.path));
+      junk.forEach(f => preSelectPaths.add(f.path));
+      dups.forEach(group => {
+        const sorted = [...group].sort((a, b) => b.size - a.size);
+        sorted.slice(1).forEach(f => preSelectPaths.add(f.path));
+      });
+
+      let html = `
+        <div class="summary">
+          <h2>Potential Savings</h2>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="label">Screenshots</div>
+              <div class="value">${screenshots.length}</div>
+              <div class="sub">${fmt(s.screenshots_bytes)}</div>
+            </div>
+            <div class="summary-card">
+              <div class="label">Junk</div>
+              <div class="value">${junk.length}</div>
+              <div class="sub">${fmt(s.junk_bytes)}</div>
+            </div>
+            <div class="summary-card">
+              <div class="label">Duplicates</div>
+              <div class="value">${dups.reduce((n, g) => n + g.length - 1, 0)}</div>
+              <div class="sub">${fmt(s.duplicates_bytes)}</div>
+            </div>
+            <div class="summary-card">
+              <div class="label">Videos</div>
+              <div class="value">${videos.length}</div>
+              <div class="sub">${fmt(s.videos_bytes)}</div>
+            </div>
+            <div class="summary-card total">
+              <div class="label">Total Reclaimable</div>
+              <div class="value">${fmt(s.total_bytes)}</div>
+              <div class="sub">${photos.length} keeper photos</div>
+            </div>
+          </div>
+        </div>`;
+
+      html += buildSection('screenshots', 'Screenshots', screenshots, s.screenshots_bytes, preSelectPaths, true);
+      html += buildSection('junk', 'Junk', junk, s.junk_bytes, preSelectPaths, true);
+      html += buildDupSection(dups, s.duplicates_bytes, preSelectPaths);
+      html += buildSection('videos', 'Videos', videos, s.videos_bytes, preSelectPaths, false);
+
+      document.getElementById('results').innerHTML = html;
+      document.getElementById('footer').style.display = 'flex';
+      updateCounter();
+    }
+
+    function buildSection(id, title, files, totalBytes, preSelectPaths, openByDefault) {
+      if (!files.length) return '';
+
+      const indices = [];
+      const items = files.map(f => {
+        const idx = reg(f.path, f.size);
+        const isSelected = preSelectPaths.has(f.path);
+        if (isSelected) selected.add(idx);
+        indices.push(idx);
+        let badgeHtml = '';
+        if (f.reason === 'burst') badgeHtml = '<span class="badge badge-burst">burst</span>';
+        else if (f.reason === 'live_photo_sidecar') badgeHtml = '<span class="badge badge-sidecar">live sidecar</span>';
+        else if (f.reason === 'corrupt_or_small') badgeHtml = '<span class="badge badge-corrupt">corrupt/small</span>';
+        return `
+          <li class="file-item">
+            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
+            <div class="file-info">
+              <div class="file-name">${esc(f.name)}${badgeHtml}</div>
+              <div class="file-path">${esc(f.path)}</div>
+            </div>
+            <div class="file-size">${fmt(f.size)}</div>
+          </li>`;
+      }).join('');
+
+      const indicesJson = JSON.stringify(indices);
+      return `
+        <div class="section">
+          <div class="section-header" onclick="toggleSection('${id}')">
+            <span class="chevron ${openByDefault ? 'open' : ''}" id="chev-${id}">&#9654;</span>
+            <span class="section-title">${title}</span>
+            <span class="section-meta">${files.length} files &middot; ${fmt(totalBytes)}</span>
+            <button class="select-all-btn" onclick="event.stopPropagation(); selectAll(${indicesJson}, '${id}')">Select all</button>
+          </div>
+          <div class="section-body ${openByDefault ? '' : 'hidden'}" id="body-${id}">
+            <ul class="file-list">${items}</ul>
+          </div>
+        </div>`;
+    }
+
+    function buildDupSection(groups, totalBytes, preSelectPaths) {
+      if (!groups.length) return '';
+
+      const IMAGE_RE = /\.(jpe?g|png|gif|webp|tiff?|bmp|heic)$/i;
+      const groupHtml = groups.map((group, gi) => {
+        const sorted = [...group].sort((a, b) => b.size - a.size);
+        const members = sorted.map((f, mi) => {
+          const idx = reg(f.path, f.size);
+          const isSelected = preSelectPaths.has(f.path);
+          if (isSelected) selected.add(idx);
+          const thumb = IMAGE_RE.test(f.path)
+            ? `<img class="dup-thumb" src="/thumbnail?path=${encodeURIComponent(f.path)}" onerror="this.outerHTML='<div class=dup-thumb-placeholder>&#128248;</div>'">`
+            : `<div class="dup-thumb-placeholder">&#128248;</div>`;
+          return `
+            <div class="dup-member">
+              <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
+              ${thumb}
+              <div class="file-info">
+                <div class="file-name">${esc(f.name)}</div>
+                <div class="file-path">${esc(f.path)}</div>
+              </div>
+              <div class="file-size">${fmt(f.size)}</div>
+            </div>`;
+        }).join('');
+        return `<div class="dup-group"><div class="dup-group-label">Group ${gi + 1} &middot; ${sorted.length} files</div><div class="dup-members">${members}</div></div>`;
+      }).join('');
+
+      return `
+        <div class="section">
+          <div class="section-header" onclick="toggleSection('dups')">
+            <span class="chevron open" id="chev-dups">&#9654;</span>
+            <span class="section-title">Duplicates</span>
+            <span class="section-meta">${groups.reduce((n, g) => n + g.length, 0)} files &middot; ${fmt(totalBytes)}</span>
+          </div>
+          <div class="section-body" id="body-dups">
+            ${groupHtml || '<div class="empty-state">No duplicates found</div>'}
+          </div>
+        </div>`;
+    }
+
+    function toggleSection(id) {
+      document.getElementById('body-' + id).classList.toggle('hidden');
+      document.getElementById('chev-' + id).classList.toggle('open');
+    }
+
+    function toggleIdx(idx, checked) {
+      if (checked) selected.add(idx);
+      else selected.delete(idx);
+      updateCounter();
+    }
+
+    function selectAll(indices, sectionId) {
+      indices.forEach(i => selected.add(i));
+      document.querySelectorAll(`#body-${sectionId} input[type=checkbox]`).forEach(cb => cb.checked = true);
+      updateCounter();
+    }
+
+    function updateCounter() {
+      let count = 0, bytes = 0;
+      for (const idx of selected) {
+        count++;
+        bytes += fileRegistry[idx]?.size || 0;
+      }
+      document.getElementById('selCount').textContent = count;
+      document.getElementById('selSize').textContent = fmt(bytes);
+      document.getElementById('deleteBtn').disabled = count === 0;
+    }
+
+    function confirmDelete() {
+      const count = selected.size;
+      let bytes = 0;
+      for (const idx of selected) bytes += fileRegistry[idx]?.size || 0;
+      document.getElementById('modalMsg').textContent =
+        `This will permanently delete ${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)}). This cannot be undone.`;
+      document.getElementById('modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden');
+    }
+
+    async function doDelete() {
+      closeModal();
+      const paths = [...selected].map(i => fileRegistry[i].path);
+      try {
+        await fetch('/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paths }),
+        });
+        startScan();
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+      }
+    }
+
+    async function browseFolder() {
+      const btn = document.getElementById('browseBtn');
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const res = await fetch('/browse');
+        const { path } = await res.json();
+        if (path) document.getElementById('pathInput').value = path;
+      } catch (e) {
+        // silently ignore
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Browse…';
+      }
+    }
+
+    document.getElementById('pathInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') startScan();
+    });
+  </script>
+</body>
+</html>
