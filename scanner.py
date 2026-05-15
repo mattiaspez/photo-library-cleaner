@@ -79,7 +79,7 @@ def _is_corrupt(path: Path) -> bool:
 def _count_files(root: Path) -> int:
     total = 0
     for _, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in ("_screenshots", "_videos", "_junk")]
+        dirnames[:] = [d for d in dirnames if d not in ("_screenshots", "_videos", "_junk", "_cleaner")]
         total += len(filenames)
     return total
 
@@ -93,7 +93,7 @@ def scan_folder(root: str, on_progress=None, is_cancelled=None) -> dict:
 
     for dirpath, dirnames, filenames in os.walk(root_path):
         # Skip our own output subfolders
-        dirnames[:] = [d for d in dirnames if d not in ("_screenshots", "_videos", "_junk")]
+        dirnames[:] = [d for d in dirnames if d not in ("_screenshots", "_videos", "_junk", "_cleaner")]
 
         dir_path = Path(dirpath)
         rel_dir = str(dir_path.relative_to(root_path)) or "."

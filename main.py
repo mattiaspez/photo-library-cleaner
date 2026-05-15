@@ -25,6 +25,15 @@ class DeleteRequest(BaseModel):
     paths: list[str]
 
 
+class MoveEntry(BaseModel):
+    path: str
+    destination: str
+
+
+class MoveRequest(BaseModel):
+    moves: list[MoveEntry]
+
+
 @app.get("/browse")
 async def browse_folder():
     result = subprocess.run(
@@ -86,6 +95,28 @@ async def delete_files(req: DeleteRequest):
         except Exception as exc:
             errors.append({"path": path_str, "error": str(exc)})
     return {"deleted": deleted, "errors": errors}
+
+
+@app.post("/move")
+async def move_files(req: MoveRequest):
+    moved = []
+    errors = []
+    for entry in req.moves:
+        try:
+            src = Path(entry.path)
+            dst_dir = Path(entry.destination)
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            dst = dst_dir / src.name
+            if dst.exists():
+                stem, suffix, counter = src.stem, src.suffix, 1
+                while dst.exists():
+                    dst = dst_dir / f"{stem}_{counter}{suffix}"
+                    counter += 1
+            src.rename(dst)
+            moved.append({"from": entry.path, "to": str(dst)})
+        except Exception as exc:
+            errors.append({"path": entry.path, "error": str(exc)})
+    return {"moved": moved, "errors": errors}
 
 
 @app.get("/thumbnail")

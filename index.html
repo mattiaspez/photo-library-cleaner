@@ -50,6 +50,7 @@
       font-size: 14px;
       font-weight: 500;
       white-space: nowrap;
+      font-family: inherit;
     }
     .btn-primary { background: #0071e3; color: #fff; }
     .btn-primary:hover { background: #0077ed; }
@@ -83,26 +84,62 @@
     .summary-card.total { background: #e8f3fd; }
     .summary-card.total .value { color: #0071e3; }
 
-    .section {
+    /* Tabs */
+    .tabs {
       background: #fff;
       border-radius: 12px;
+      padding: 6px;
+      display: flex;
+      gap: 4px;
       margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 9px 12px;
+      border: none;
+      border-radius: 8px;
+      background: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #888;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-family: inherit;
+    }
+    .tab-btn:hover:not(.active) { background: #f5f5f7; color: #555; }
+    .tab-btn.active { background: #0071e3; color: #fff; }
+    .tab-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.08);
+    }
+    .tab-btn.active .tab-badge { background: rgba(255,255,255,0.25); }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Panel card */
+    .panel-card {
+      background: #fff;
+      border-radius: 12px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.07);
       overflow: hidden;
     }
-    .section-header {
+    .panel-toolbar {
       display: flex;
       align-items: center;
-      padding: 14px 18px;
-      cursor: pointer;
-      user-select: none;
-      gap: 10px;
+      justify-content: space-between;
+      padding: 10px 18px;
+      border-bottom: 1px solid #f2f2f2;
     }
-    .section-header:hover { background: #fafafa; }
-    .chevron { font-size: 10px; color: #aaa; transition: transform 0.15s; flex-shrink: 0; }
-    .chevron.open { transform: rotate(90deg); }
-    .section-title { font-weight: 600; font-size: 14px; flex: 1; }
-    .section-meta { font-size: 12px; color: #999; }
+    .panel-meta { font-size: 12px; color: #999; }
     .select-all-btn {
       font-size: 12px;
       background: none;
@@ -111,11 +148,9 @@
       border-radius: 6px;
       cursor: pointer;
       color: #444;
+      font-family: inherit;
     }
     .select-all-btn:hover { background: #f0f0f0; }
-
-    .section-body { border-top: 1px solid #f2f2f2; }
-    .section-body.hidden { display: none; }
 
     .file-list { list-style: none; }
     .file-item {
@@ -177,6 +212,7 @@
       font-size: 20px;
     }
 
+    /* Sticky footer */
     .sticky-footer {
       position: fixed;
       bottom: 0; left: 0; right: 0;
@@ -184,14 +220,39 @@
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-top: 1px solid #e0e0e0;
-      padding: 14px 24px;
+      padding: 12px 24px;
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 12px;
     }
     .selected-info { flex: 1; font-size: 13px; color: #666; }
     .selected-info strong { color: #1d1d1f; }
 
+    /* Action toggle */
+    .action-toggle {
+      display: flex;
+      border: 1px solid #d0d0d0;
+      border-radius: 8px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .action-option {
+      padding: 7px 14px;
+      border: none;
+      border-right: 1px solid #d0d0d0;
+      background: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #888;
+      font-family: inherit;
+      transition: background 0.1s, color 0.1s;
+    }
+    .action-option:last-child { border-right: none; }
+    .action-option:hover:not(.active) { background: #f5f5f7; color: #444; }
+    .action-option.active { background: #1d1d1f; color: #fff; }
+
+    /* Progress */
     .progress-box {
       background: #fff;
       border-radius: 12px;
@@ -238,6 +299,7 @@
       font-size: 13px;
       cursor: pointer;
       color: #555;
+      font-family: inherit;
     }
     .btn-cancel:hover { background: #f5f5f7; }
     .btn-cancel:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -274,7 +336,7 @@
       background: #fff;
       border-radius: 16px;
       padding: 28px;
-      max-width: 380px;
+      max-width: 400px;
       width: 90%;
       box-shadow: 0 12px 40px rgba(0,0,0,0.18);
     }
@@ -282,7 +344,7 @@
     .modal p { font-size: 14px; color: #555; margin-bottom: 22px; line-height: 1.5; }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
-    #results { padding-bottom: 72px; }
+    #results { padding-bottom: 80px; }
   </style>
 </head>
 <body>
@@ -319,30 +381,35 @@
       <strong id="selCount">0</strong> files selected &nbsp;&middot;&nbsp;
       <strong id="selSize">0 B</strong>
     </div>
-    <button class="btn btn-danger" id="deleteBtn" onclick="confirmDelete()" disabled>Delete Selected</button>
+    <div class="action-toggle">
+      <button class="action-option active" id="modeDelete" onclick="setActionMode('delete')">Delete</button>
+      <button class="action-option" id="modeMove" onclick="setActionMode('move')">Move to subfolder</button>
+    </div>
+    <button class="btn btn-danger" id="actionBtn" onclick="confirmAction()" disabled>Delete Selected</button>
   </div>
 
   <div class="modal-backdrop hidden" id="modal">
     <div class="modal">
-      <h3>Permanently delete files?</h3>
+      <h3 id="modalTitle">Permanently delete files?</h3>
       <p id="modalMsg"></p>
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-danger" onclick="doDelete()">Delete</button>
+        <button class="btn btn-danger" id="modalConfirmBtn" onclick="doAction()">Delete</button>
       </div>
     </div>
   </div>
 
   <script>
-    let fileRegistry = []; // [{path, size}]
-    let selected = new Set(); // file indices
+    let fileRegistry = []; // {path, size, category}
+    let selected = new Set();
     let currentReport = null;
     let pollTimer = null;
     let currentJobId = null;
+    let actionMode = 'delete';
 
-    function reg(path, size) {
+    function reg(path, size, category) {
       const idx = fileRegistry.length;
-      fileRegistry.push({ path, size });
+      fileRegistry.push({ path, size, category });
       return idx;
     }
 
@@ -355,6 +422,18 @@
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+    }
+
+    function setActionMode(mode) {
+      actionMode = mode;
+      document.getElementById('modeDelete').classList.toggle('active', mode === 'delete');
+      document.getElementById('modeMove').classList.toggle('active', mode === 'move');
+      updateCounter();
     }
 
     async function startScan() {
@@ -405,7 +484,6 @@
       hashing:  'Computing hashes…',
       deduping: 'Finding duplicates…',
     };
-    // Rough weight of each phase as a fraction of total progress bar
     const PHASE_OFFSET = { scanning: 0, hashing: 0.4, deduping: 0.95 };
     const PHASE_WEIGHT = { scanning: 0.4, hashing: 0.55, deduping: 0.05 };
 
@@ -413,12 +491,9 @@
       const fill = document.getElementById('progressFill');
       const msg  = document.getElementById('progressMsg');
       const counts = document.getElementById('progressCounts');
-
       if (!p || !p.phase) return;
-
       const pct = p.total > 0 ? p.current / p.total : 0;
       const barPct = (PHASE_OFFSET[p.phase] + pct * PHASE_WEIGHT[p.phase]) * 100;
-
       fill.classList.remove('indeterminate');
       fill.style.width = barPct.toFixed(1) + '%';
       msg.textContent = PHASE_LABELS[p.phase] || 'Working…';
@@ -468,7 +543,6 @@
       const dups = report.duplicates;
       const s = report.savings;
 
-      // Pre-select screenshots, junk, and smaller duplicates
       const preSelectPaths = new Set();
       screenshots.forEach(f => preSelectPaths.add(f.path));
       junk.forEach(f => preSelectPaths.add(f.path));
@@ -509,22 +583,45 @@
           </div>
         </div>`;
 
-      html += buildSection('screenshots', 'Screenshots', screenshots, s.screenshots_bytes, preSelectPaths, true);
-      html += buildSection('junk', 'Junk', junk, s.junk_bytes, preSelectPaths, true);
-      html += buildDupSection(dups, s.duplicates_bytes, preSelectPaths);
-      html += buildSection('videos', 'Videos', videos, s.videos_bytes, preSelectPaths, false);
+      const tabDefs = [
+        { id: 'screenshots', label: 'Screenshots', count: screenshots.length,                          bytes: s.screenshots_bytes },
+        { id: 'junk',        label: 'Junk',        count: junk.length,                                 bytes: s.junk_bytes },
+        { id: 'duplicates',  label: 'Duplicates',  count: dups.reduce((n,g) => n+g.length, 0),         bytes: s.duplicates_bytes },
+        { id: 'videos',      label: 'Videos',      count: videos.length,                               bytes: s.videos_bytes },
+      ].filter(t => t.count > 0);
+
+      if (tabDefs.length === 0) {
+        html += '<div class="panel-card"><div class="empty-state">Your library looks clean! No issues found.</div></div>';
+        document.getElementById('results').innerHTML = html;
+        return;
+      }
+
+      html += '<div class="tabs">';
+      tabDefs.forEach((t, i) => {
+        html += `<button class="tab-btn ${i === 0 ? 'active' : ''}" data-tab="${t.id}" onclick="switchTab('${t.id}')">
+          ${t.label}<span class="tab-badge">${t.count}</span>
+        </button>`;
+      });
+      html += '</div>';
+
+      tabDefs.forEach((t, i) => {
+        html += `<div class="tab-panel ${i === 0 ? 'active' : ''}" data-tab="${t.id}">`;
+        if (t.id === 'screenshots') html += buildFilePanel(screenshots, 'screenshots', preSelectPaths, t.bytes);
+        else if (t.id === 'junk')   html += buildFilePanel(junk, 'junk', preSelectPaths, t.bytes);
+        else if (t.id === 'duplicates') html += buildDupPanel(dups, preSelectPaths, t.bytes);
+        else if (t.id === 'videos') html += buildFilePanel(videos, 'videos', preSelectPaths, t.bytes);
+        html += '</div>';
+      });
 
       document.getElementById('results').innerHTML = html;
       document.getElementById('footer').style.display = 'flex';
       updateCounter();
     }
 
-    function buildSection(id, title, files, totalBytes, preSelectPaths, openByDefault) {
-      if (!files.length) return '';
-
+    function buildFilePanel(files, category, preSelectPaths, totalBytes) {
       const indices = [];
       const items = files.map(f => {
-        const idx = reg(f.path, f.size);
+        const idx = reg(f.path, f.size, category);
         const isSelected = preSelectPaths.has(f.path);
         if (isSelected) selected.add(idx);
         indices.push(idx);
@@ -534,7 +631,7 @@
         else if (f.reason === 'corrupt_or_small') badgeHtml = '<span class="badge badge-corrupt">corrupt/small</span>';
         return `
           <li class="file-item">
-            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
+            <input type="checkbox" data-idx="${idx}" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
             <div class="file-info">
               <div class="file-name">${esc(f.name)}${badgeHtml}</div>
               <div class="file-path">${esc(f.path)}</div>
@@ -545,35 +642,31 @@
 
       const indicesJson = JSON.stringify(indices);
       return `
-        <div class="section">
-          <div class="section-header" onclick="toggleSection('${id}')">
-            <span class="chevron ${openByDefault ? 'open' : ''}" id="chev-${id}">&#9654;</span>
-            <span class="section-title">${title}</span>
-            <span class="section-meta">${files.length} files &middot; ${fmt(totalBytes)}</span>
-            <button class="select-all-btn" onclick="event.stopPropagation(); selectAll(${indicesJson}, '${id}')">Select all</button>
+        <div class="panel-card">
+          <div class="panel-toolbar">
+            <span class="panel-meta">${files.length} files &middot; ${fmt(totalBytes)}</span>
+            <button class="select-all-btn" onclick="selectAll(${indicesJson})">Select all</button>
           </div>
-          <div class="section-body ${openByDefault ? '' : 'hidden'}" id="body-${id}">
-            <ul class="file-list">${items}</ul>
-          </div>
+          <ul class="file-list">${items}</ul>
         </div>`;
     }
 
-    function buildDupSection(groups, totalBytes, preSelectPaths) {
-      if (!groups.length) return '';
-
+    function buildDupPanel(groups, preSelectPaths, totalBytes) {
       const IMAGE_RE = /\.(jpe?g|png|gif|webp|tiff?|bmp|heic)$/i;
+      const allIndices = [];
       const groupHtml = groups.map((group, gi) => {
         const sorted = [...group].sort((a, b) => b.size - a.size);
-        const members = sorted.map((f, mi) => {
-          const idx = reg(f.path, f.size);
+        const members = sorted.map(f => {
+          const idx = reg(f.path, f.size, 'duplicates');
           const isSelected = preSelectPaths.has(f.path);
           if (isSelected) selected.add(idx);
+          allIndices.push(idx);
           const thumb = IMAGE_RE.test(f.path)
             ? `<img class="dup-thumb" src="/thumbnail?path=${encodeURIComponent(f.path)}" onerror="this.outerHTML='<div class=dup-thumb-placeholder>&#128248;</div>'">`
             : `<div class="dup-thumb-placeholder">&#128248;</div>`;
           return `
             <div class="dup-member">
-              <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
+              <input type="checkbox" data-idx="${idx}" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
               ${thumb}
               <div class="file-info">
                 <div class="file-name">${esc(f.name)}</div>
@@ -585,22 +678,16 @@
         return `<div class="dup-group"><div class="dup-group-label">Group ${gi + 1} &middot; ${sorted.length} files</div><div class="dup-members">${members}</div></div>`;
       }).join('');
 
+      const totalFiles = groups.reduce((n, g) => n + g.length, 0);
+      const indicesJson = JSON.stringify(allIndices);
       return `
-        <div class="section">
-          <div class="section-header" onclick="toggleSection('dups')">
-            <span class="chevron open" id="chev-dups">&#9654;</span>
-            <span class="section-title">Duplicates</span>
-            <span class="section-meta">${groups.reduce((n, g) => n + g.length, 0)} files &middot; ${fmt(totalBytes)}</span>
+        <div class="panel-card">
+          <div class="panel-toolbar">
+            <span class="panel-meta">${totalFiles} files &middot; ${fmt(totalBytes)}</span>
+            <button class="select-all-btn" onclick="selectAll(${indicesJson})">Select all</button>
           </div>
-          <div class="section-body" id="body-dups">
-            ${groupHtml || '<div class="empty-state">No duplicates found</div>'}
-          </div>
+          ${groupHtml || '<div class="empty-state">No duplicates found</div>'}
         </div>`;
-    }
-
-    function toggleSection(id) {
-      document.getElementById('body-' + id).classList.toggle('hidden');
-      document.getElementById('chev-' + id).classList.toggle('open');
     }
 
     function toggleIdx(idx, checked) {
@@ -609,9 +696,12 @@
       updateCounter();
     }
 
-    function selectAll(indices, sectionId) {
-      indices.forEach(i => selected.add(i));
-      document.querySelectorAll(`#body-${sectionId} input[type=checkbox]`).forEach(cb => cb.checked = true);
+    function selectAll(indices) {
+      indices.forEach(i => {
+        selected.add(i);
+        const cb = document.querySelector(`input[data-idx="${i}"]`);
+        if (cb) cb.checked = true;
+      });
       updateCounter();
     }
 
@@ -623,15 +713,36 @@
       }
       document.getElementById('selCount').textContent = count;
       document.getElementById('selSize').textContent = fmt(bytes);
-      document.getElementById('deleteBtn').disabled = count === 0;
+      const btn = document.getElementById('actionBtn');
+      btn.disabled = count === 0;
+      if (actionMode === 'delete') {
+        btn.textContent = 'Delete Selected';
+        btn.className = 'btn btn-danger';
+      } else {
+        btn.textContent = 'Move Selected';
+        btn.className = 'btn btn-primary';
+      }
     }
 
-    function confirmDelete() {
+    function confirmAction() {
       const count = selected.size;
       let bytes = 0;
       for (const idx of selected) bytes += fileRegistry[idx]?.size || 0;
-      document.getElementById('modalMsg').textContent =
-        `This will permanently delete ${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)}). This cannot be undone.`;
+
+      if (actionMode === 'delete') {
+        document.getElementById('modalTitle').textContent = 'Permanently delete files?';
+        document.getElementById('modalMsg').textContent =
+          `This will permanently delete ${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)}). This cannot be undone.`;
+        document.getElementById('modalConfirmBtn').className = 'btn btn-danger';
+        document.getElementById('modalConfirmBtn').textContent = 'Delete';
+      } else {
+        const libraryPath = document.getElementById('pathInput').value.trim();
+        document.getElementById('modalTitle').textContent = 'Move files to subfolder?';
+        document.getElementById('modalMsg').textContent =
+          `This will move ${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)}) into "${libraryPath}/_cleaner/". Files are grouped by category and can be restored from there.`;
+        document.getElementById('modalConfirmBtn').className = 'btn btn-primary';
+        document.getElementById('modalConfirmBtn').textContent = 'Move';
+      }
       document.getElementById('modal').classList.remove('hidden');
     }
 
@@ -639,8 +750,16 @@
       document.getElementById('modal').classList.add('hidden');
     }
 
-    async function doDelete() {
+    async function doAction() {
       closeModal();
+      if (actionMode === 'delete') {
+        await doDelete();
+      } else {
+        await doMove();
+      }
+    }
+
+    async function doDelete() {
       const paths = [...selected].map(i => fileRegistry[i].path);
       try {
         await fetch('/delete', {
@@ -651,6 +770,28 @@
         startScan();
       } catch (e) {
         alert('Delete failed: ' + e.message);
+      }
+    }
+
+    async function doMove() {
+      const libraryPath = document.getElementById('pathInput').value.trim();
+      const moves = [...selected].map(i => {
+        const f = fileRegistry[i];
+        return { path: f.path, destination: libraryPath + '/_cleaner/' + f.category };
+      });
+      try {
+        const res = await fetch('/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ moves }),
+        });
+        const data = await res.json();
+        if (data.errors && data.errors.length > 0) {
+          alert(`Moved ${data.moved.length} files. ${data.errors.length} error(s) — some files could not be moved.`);
+        }
+        startScan();
+      } catch (e) {
+        alert('Move failed: ' + e.message);
       }
     }
 
