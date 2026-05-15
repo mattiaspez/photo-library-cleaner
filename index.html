@@ -195,21 +195,52 @@
     .progress-box {
       background: #fff;
       border-radius: 12px;
-      padding: 40px 24px;
-      text-align: center;
+      padding: 32px 28px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.07);
       margin-bottom: 20px;
     }
-    .spinner {
-      width: 36px; height: 36px;
-      border: 3px solid #e8e8ed;
-      border-top-color: #0071e3;
-      border-radius: 50%;
-      animation: spin 0.75s linear infinite;
-      margin: 0 auto 14px;
+    .progress-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .progress-box p { font-size: 14px; color: #888; }
+    .progress-label { font-size: 14px; color: #555; font-weight: 500; }
+    .progress-counts { font-size: 12px; color: #aaa; }
+    .progress-track {
+      height: 6px;
+      background: #e8e8ed;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #0071e3;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .progress-fill.indeterminate {
+      width: 30% !important;
+      animation: indeterminate 1.2s ease-in-out infinite;
+    }
+    @keyframes indeterminate {
+      0%   { margin-left: -30%; }
+      100% { margin-left: 100%; }
+    }
+    .progress-footer { display: flex; justify-content: flex-end; }
+    .btn-cancel {
+      background: none;
+      border: 1px solid #d0d0d0;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      color: #555;
+    }
+    .btn-cancel:hover { background: #f5f5f7; }
+    .btn-cancel:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .error-box {
       background: #fff;
@@ -268,8 +299,16 @@
     </div>
 
     <div id="progressBox" class="progress-box" style="display:none">
-      <div class="spinner"></div>
-      <p id="progressMsg">Scanning your library…</p>
+      <div class="progress-header">
+        <span class="progress-label" id="progressMsg">Scanning your library…</span>
+        <span class="progress-counts" id="progressCounts"></span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill indeterminate" id="progressFill"></div>
+      </div>
+      <div class="progress-footer">
+        <button class="btn-cancel" id="cancelBtn" onclick="cancelScan()">Cancel</button>
+      </div>
     </div>
 
     <div id="results"></div>
@@ -299,6 +338,7 @@
     let selected = new Set(); // file indices
     let currentReport = null;
     let pollTimer = null;
+    let currentJobId = null;
 
     function reg(path, size) {
       const idx = fileRegistry.length;
@@ -329,6 +369,11 @@
       document.getElementById('footer').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
       document.getElementById('progressMsg').textContent = 'Scanning your library…';
+      document.getElementById('progressCounts').textContent = '';
+      document.getElementById('progressFill').classList.add('indeterminate');
+      document.getElementById('progressFill').style.width = '0%';
+      document.getElementById('cancelBtn').disabled = false;
+      document.getElementById('cancelBtn').textContent = 'Cancel';
       document.getElementById('scanBtn').disabled = true;
       clearTimeout(pollTimer);
 
@@ -339,10 +384,45 @@
           body: JSON.stringify({ path }),
         });
         const { job_id } = await res.json();
+        currentJobId = job_id;
         pollJob(job_id);
       } catch (e) {
         showError(e.message);
       }
+    }
+
+    async function cancelScan() {
+      if (!currentJobId) return;
+      document.getElementById('cancelBtn').disabled = true;
+      document.getElementById('cancelBtn').textContent = 'Cancelling…';
+      try {
+        await fetch('/jobs/' + currentJobId + '/cancel', { method: 'POST' });
+      } catch (e) { /* ignore */ }
+    }
+
+    const PHASE_LABELS = {
+      scanning: 'Scanning files…',
+      hashing:  'Computing hashes…',
+      deduping: 'Finding duplicates…',
+    };
+    // Rough weight of each phase as a fraction of total progress bar
+    const PHASE_OFFSET = { scanning: 0, hashing: 0.4, deduping: 0.95 };
+    const PHASE_WEIGHT = { scanning: 0.4, hashing: 0.55, deduping: 0.05 };
+
+    function updateProgress(p) {
+      const fill = document.getElementById('progressFill');
+      const msg  = document.getElementById('progressMsg');
+      const counts = document.getElementById('progressCounts');
+
+      if (!p || !p.phase) return;
+
+      const pct = p.total > 0 ? p.current / p.total : 0;
+      const barPct = (PHASE_OFFSET[p.phase] + pct * PHASE_WEIGHT[p.phase]) * 100;
+
+      fill.classList.remove('indeterminate');
+      fill.style.width = barPct.toFixed(1) + '%';
+      msg.textContent = PHASE_LABELS[p.phase] || 'Working…';
+      counts.textContent = p.total > 0 ? `${p.current} / ${p.total}` : '';
     }
 
     function pollJob(jobId) {
@@ -351,20 +431,26 @@
           const res = await fetch('/jobs/' + jobId);
           const job = await res.json();
           if (job.status === 'running') {
-            document.getElementById('progressMsg').textContent = 'Computing hashes and finding duplicates…';
+            updateProgress(job.progress);
             pollJob(jobId);
           } else if (job.status === 'done') {
             document.getElementById('progressBox').style.display = 'none';
             document.getElementById('scanBtn').disabled = false;
+            currentJobId = null;
             currentReport = job.result;
             renderReport(job.result);
+          } else if (job.status === 'cancelled') {
+            document.getElementById('progressBox').style.display = 'none';
+            document.getElementById('scanBtn').disabled = false;
+            currentJobId = null;
+            document.getElementById('results').innerHTML = '<div class="error-box" style="color:#555">Scan cancelled.</div>';
           } else {
             showError(job.error || 'Unknown error');
           }
         } catch (e) {
           showError(e.message);
         }
-      }, 1500);
+      }, 800);
     }
 
     function showError(msg) {

@@ -75,7 +75,15 @@ def _is_corrupt(path: Path) -> bool:
             return True
     return False
 
-def scan_folder(root: str) -> dict:
+def _count_files(root: Path) -> int:
+    total = 0
+    for _, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in ("_screenshots", "_videos", "_junk")]
+        total += len(filenames)
+    return total
+
+
+def scan_folder(root: str, on_progress=None, is_cancelled=None) -> dict:
     root_path = Path(root).resolve()
     results = {
         "root": str(root_path),
@@ -103,12 +111,17 @@ def scan_folder(root: str) -> dict:
         }
 
         for fname in filenames:
+            if is_cancelled and is_cancelled():
+                raise InterruptedError("Cancelled")
+
             fpath = dir_path / fname
             ext = fpath.suffix.lower()
 
             try:
                 size = fpath.stat().st_size
             except OSError:
+                if on_progress:
+                    on_progress()
                 continue
 
             entry = {"path": str(fpath), "name": fname, "size": size}
@@ -130,7 +143,9 @@ def scan_folder(root: str) -> dict:
                     folder_data["junk"].append(entry)
                 else:
                     folder_data["photos"].append(entry)
-            # non-image/video files are ignored
+
+            if on_progress:
+                on_progress()
 
         has_content = any(folder_data[k] for k in folder_data)
         if has_content:
@@ -139,11 +154,13 @@ def scan_folder(root: str) -> dict:
     return results
 
 
-def compute_hashes(scan_results: dict, hash_size: int = 8) -> dict:
+def compute_hashes(scan_results: dict, hash_size: int = 8, on_progress=None, is_cancelled=None) -> dict:
     """Compute perceptual hashes for all keeper photos."""
     hashes = {}  # path -> hash string
     for folder_data in scan_results["folders"].values():
         for entry in folder_data["photos"]:
+            if is_cancelled and is_cancelled():
+                raise InterruptedError("Cancelled")
             path = entry["path"]
             try:
                 with Image.open(path) as img:
@@ -151,6 +168,8 @@ def compute_hashes(scan_results: dict, hash_size: int = 8) -> dict:
                     hashes[path] = str(h)
             except Exception:
                 pass
+            if on_progress:
+                on_progress()
     return hashes
 
 
@@ -183,14 +202,36 @@ def find_duplicates(hashes: dict, threshold: int = 6) -> list:
     return groups
 
 
-def build_report(root: str, hash_threshold: int = 6) -> dict:
-    print(f"Scanning {root}...")
-    scan = scan_folder(root)
+def build_report(root: str, hash_threshold: int = 6, progress_state: dict = None, is_cancelled=None) -> dict:
+    root_path = Path(root).resolve()
 
-    print("Computing perceptual hashes for duplicate detection...")
-    hashes = compute_hashes(scan)
+    total_files = _count_files(root_path)
+    if progress_state is not None:
+        progress_state.update({"phase": "scanning", "current": 0, "total": total_files})
 
-    print("Finding duplicates...")
+    scan_counter = [0]
+    def _scan_progress():
+        scan_counter[0] += 1
+        if progress_state is not None:
+            progress_state["current"] = scan_counter[0]
+
+    scan = scan_folder(root, on_progress=_scan_progress, is_cancelled=is_cancelled)
+
+    total_photos = sum(len(fd["photos"]) for fd in scan["folders"].values())
+    hash_counter = [0]
+    if progress_state is not None:
+        progress_state.update({"phase": "hashing", "current": 0, "total": total_photos})
+
+    def _hash_progress():
+        hash_counter[0] += 1
+        if progress_state is not None:
+            progress_state["current"] = hash_counter[0]
+
+    hashes = compute_hashes(scan, on_progress=_hash_progress, is_cancelled=is_cancelled)
+
+    if progress_state is not None:
+        progress_state.update({"phase": "deduping", "current": 0, "total": 1})
+
     dup_groups = find_duplicates(hashes, threshold=hash_threshold)
 
     # Enrich duplicate groups with file sizes

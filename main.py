@@ -12,6 +12,7 @@ from PIL import Image
 app = FastAPI()
 
 _jobs: dict = {}
+_cancelled: set = set()
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".tif", ".bmp", ".heic"}
 
@@ -45,11 +46,17 @@ async def start_scan(req: ScanRequest, background_tasks: BackgroundTasks):
 
 
 def _run_scan(job_id: str, path: str):
+    progress_state = {}
+    _jobs[job_id] = {"status": "running", "progress": progress_state}
     try:
-        report = build_report(path)
+        report = build_report(path, progress_state=progress_state, is_cancelled=lambda: job_id in _cancelled)
         _jobs[job_id] = {"status": "done", "result": report}
+    except InterruptedError:
+        _jobs[job_id] = {"status": "cancelled"}
     except Exception as exc:
         _jobs[job_id] = {"status": "error", "error": str(exc)}
+    finally:
+        _cancelled.discard(job_id)
 
 
 @app.get("/jobs/{job_id}")
@@ -58,6 +65,14 @@ async def get_job(job_id: str):
     if not job:
         raise HTTPException(404, "Job not found")
     return job
+
+
+@app.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    if job_id not in _jobs:
+        raise HTTPException(404, "Job not found")
+    _cancelled.add(job_id)
+    return {"cancelled": True}
 
 
 @app.post("/delete")
