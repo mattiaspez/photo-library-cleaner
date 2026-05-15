@@ -10,6 +10,7 @@ import os
 import re
 import json
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 import imagehash
 
@@ -154,20 +155,29 @@ def scan_folder(root: str, on_progress=None, is_cancelled=None) -> dict:
     return results
 
 
+def _hash_one(path: str, hash_size: int) -> tuple:
+    try:
+        with Image.open(path) as img:
+            # Draft mode tells libjpeg to decode at reduced resolution — much faster for large JPEGs
+            if getattr(img, "format", None) == "JPEG":
+                img.draft("L", (hash_size * 4, hash_size * 4))
+            return path, str(imagehash.phash(img, hash_size=hash_size))
+    except Exception:
+        return path, None
+
+
 def compute_hashes(scan_results: dict, hash_size: int = 8, on_progress=None, is_cancelled=None) -> dict:
-    """Compute perceptual hashes for all keeper photos."""
-    hashes = {}  # path -> hash string
-    for folder_data in scan_results["folders"].values():
-        for entry in folder_data["photos"]:
+    paths = [e["path"] for fd in scan_results["folders"].values() for e in fd["photos"]]
+    hashes = {}
+    workers = min((os.cpu_count() or 4) * 2, 16)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(_hash_one, p, hash_size): p for p in paths}
+        for future in as_completed(futures):
             if is_cancelled and is_cancelled():
                 raise InterruptedError("Cancelled")
-            path = entry["path"]
-            try:
-                with Image.open(path) as img:
-                    h = imagehash.phash(img, hash_size=hash_size)
-                    hashes[path] = str(h)
-            except Exception:
-                pass
+            path, h = future.result()
+            if h is not None:
+                hashes[path] = h
             if on_progress:
                 on_progress()
     return hashes
