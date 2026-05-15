@@ -3,6 +3,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uuid
 import subprocess
+import threading
+import time
+import signal
+import os
 from pathlib import Path
 from io import BytesIO
 
@@ -10,6 +14,35 @@ from scanner import build_report
 from PIL import Image
 
 app = FastAPI()
+
+_heartbeat_ts: float | None = None
+_HEARTBEAT_TIMEOUT = 10  # seconds of silence before shutting down
+
+
+@app.on_event("startup")
+async def _start_heartbeat_watcher():
+    def watch():
+        # Wait up to 60 s for the browser to open and send its first ping
+        for _ in range(60):
+            if _heartbeat_ts is not None:
+                break
+            time.sleep(1)
+        else:
+            return  # browser never connected — leave server running
+        # Browser connected; shut down when it goes quiet
+        while True:
+            time.sleep(2)
+            if time.time() - _heartbeat_ts > _HEARTBEAT_TIMEOUT:
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+    threading.Thread(target=watch, daemon=True).start()
+
+
+@app.post("/heartbeat")
+async def heartbeat():
+    global _heartbeat_ts
+    _heartbeat_ts = time.time()
+    return {"ok": True}
 
 _jobs: dict = {}
 _cancelled: set = set()
@@ -117,6 +150,27 @@ async def move_files(req: MoveRequest):
         except Exception as exc:
             errors.append({"path": entry.path, "error": str(exc)})
     return {"moved": moved, "errors": errors}
+
+
+VIDEO_MIME = {
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".m4v": "video/mp4",
+    ".webm": "video/webm",
+    ".3gp": "video/3gpp",
+    ".wmv": "video/x-ms-wmv",
+}
+
+
+@app.get("/stream")
+async def stream_file(path: str = Query(...)):
+    p = Path(path)
+    if not p.is_file():
+        raise HTTPException(404)
+    media_type = VIDEO_MIME.get(p.suffix.lower(), "application/octet-stream")
+    return FileResponse(str(p), media_type=media_type)
 
 
 @app.get("/thumbnail")
