@@ -15,7 +15,7 @@ from PIL import Image
 
 app = FastAPI()
 
-_heartbeat_ts: float | None = None
+_heartbeat_ts = None  # float timestamp of last heartbeat
 _HEARTBEAT_TIMEOUT = 10  # seconds of silence before shutting down
 
 
