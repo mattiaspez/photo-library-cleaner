@@ -32,7 +32,7 @@
       margin-bottom: 20px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.07);
     }
-    .scan-bar input {
+    .scan-bar textarea {
       flex: 1;
       border: 1px solid #d0d0d0;
       border-radius: 8px;
@@ -40,8 +40,15 @@
       font-size: 14px;
       outline: none;
       font-family: "SF Mono", Menlo, monospace;
+      resize: none;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
+      line-height: 1.4;
+      height: 38px;
+      box-sizing: border-box;
     }
-    .scan-bar input:focus { border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.15); }
+    .scan-bar textarea:focus { border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.15); }
     .btn {
       padding: 9px 18px;
       border-radius: 8px;
@@ -473,6 +480,7 @@
       gap: 14px;
     }
     .lb-img {
+      width: calc(100vw - 120px);
       max-width: calc(100vw - 120px);
       max-height: calc(100vh - 120px);
       object-fit: contain;
@@ -505,6 +513,7 @@
       flex: 1;
     }
     .lb-dup-img {
+      width: calc((100vw - 120px) / var(--n, 2) - 20px);
       max-width: calc((100vw - 120px) / var(--n, 2) - 20px);
       max-height: calc(100vh - 160px);
       object-fit: contain;
@@ -554,7 +563,7 @@
 
   <div class="container">
     <div class="scan-bar">
-      <input type="text" id="pathInput" placeholder="/Users/you/Pictures/Photos Library" />
+      <textarea id="pathInput" rows="1" spellcheck="false" placeholder="/Users/you/Pictures/Photos Library"></textarea>
       <button class="btn btn-secondary" id="browseBtn" onclick="browseFolder()">Browse…</button>
       <button class="btn btn-primary" id="scanBtn" onclick="startScan()">Scan</button>
     </div>
@@ -626,7 +635,7 @@
 
     function reg(path, size, category) {
       const idx = fileRegistry.length;
-      fileRegistry.push({ path, size, category });
+      fileRegistry.push({ path, size, category, name: path.split('/').pop() });
       return idx;
     }
 
@@ -859,7 +868,7 @@
         else if (f.reason === 'corrupt_or_small') badgeHtml = '<span class="badge badge-corrupt">corrupt/small</span>';
         let thumbHtml = '';
         if (IMAGE_RE.test(f.path)) {
-          thumbHtml = `<img class="file-thumb" src="/thumbnail?path=${encodeURIComponent(f.path)}" onclick="openFileLightbox(${idx})" onerror="this.style.visibility='hidden'">`;
+          thumbHtml = `<img class="file-thumb" loading="lazy" src="/thumbnail?path=${encodeURIComponent(f.path)}" onclick="openFileLightbox(${idx})" onerror="this.style.visibility='hidden'">`;
         } else if (VIDEO_RE.test(f.path)) {
           thumbHtml = `<div class="file-thumb-placeholder" onclick="openFileLightbox(${idx})">&#127909;</div>`;
         }
@@ -1102,18 +1111,9 @@
         const f = fileRegistry[idx];
         const isSelected = selected.has(idx);
 
-        let mediaHtml;
-        if (VIDEO_RE.test(f.path)) {
-          mediaHtml = `<video class="lb-video" src="/stream?path=${encodeURIComponent(f.path)}" controls></video>`;
-        } else if (IMAGE_RE.test(f.path)) {
-          mediaHtml = `<img class="lb-img" src="/thumbnail?path=${encodeURIComponent(f.path)}&size=1400" alt="${esc(f.name)}" onerror="this.style.display='none'">`;
-        } else {
-          mediaHtml = `<div class="lb-no-preview">No preview available</div>`;
-        }
-
         body.innerHTML = `
           <div class="lb-single">
-            ${mediaHtml}
+            <div id="lbMediaSlot"></div>
             <div class="lb-info">
               <span class="lb-filename">${esc(f.name)}</span>
               <span class="lb-meta">${fmt(f.size)}</span>
@@ -1124,29 +1124,54 @@
             </div>
           </div>`;
 
+        const slot = document.getElementById('lbMediaSlot');
+        if (VIDEO_RE.test(f.path)) {
+          const v = document.createElement('video');
+          v.className = 'lb-video'; v.src = `/stream?path=${encodeURIComponent(f.path)}`; v.controls = true;
+          slot.replaceWith(v);
+        } else if (IMAGE_RE.test(f.path)) {
+          const img = document.createElement('img');
+          img.className = 'lb-img';
+          img.alt = f.name;
+          img.onerror = () => { const d = document.createElement('div'); d.className = 'lb-no-preview'; d.textContent = 'No preview available'; img.replaceWith(d); };
+          img.src = `/thumbnail?path=${encodeURIComponent(f.path)}&size=800`;
+          slot.replaceWith(img);
+        } else {
+          const d = document.createElement('div'); d.className = 'lb-no-preview'; d.textContent = 'No preview available';
+          slot.replaceWith(d);
+        }
+
         counter.textContent = `${lb.pos + 1} / ${lb.indices.length}`;
         prev.style.visibility = lb.pos > 0 ? 'visible' : 'hidden';
         next.style.visibility = lb.pos < lb.indices.length - 1 ? 'visible' : 'hidden';
 
       } else {
         const group = dupGroupsData[lb.groupIdx];
-        const panels = group.map(m => {
+        const container = document.createElement('div');
+        container.className = 'lb-dup-panels';
+        container.style.setProperty('--n', group.length);
+        group.forEach(m => {
           const isSelected = selected.has(m.registryIdx);
-          return `
-            <div class="lb-dup-panel">
-              <img class="lb-dup-img" src="/thumbnail?path=${encodeURIComponent(m.path)}&size=700" alt="${esc(m.name)}" onerror="this.outerHTML='<div class=lb-dup-no-preview>&#128248;<br>No preview</div>'">
-              <div class="lb-info">
-                <span class="lb-filename">${esc(m.name)}</span>
-                <span class="lb-meta">${fmt(m.size)}</span>
-                <label class="lb-check">
-                  <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="lbToggleCheck(${m.registryIdx}, this.checked)">
-                  Mark for deletion
-                </label>
-              </div>
-            </div>`;
-        }).join('');
-
-        body.innerHTML = `<div class="lb-dup-panels" style="--n:${group.length}">${panels}</div>`;
+          const panel = document.createElement('div');
+          panel.className = 'lb-dup-panel';
+          const img = document.createElement('img');
+          img.className = 'lb-dup-img';
+          img.alt = m.name;
+          img.onerror = () => { const d = document.createElement('div'); d.className = 'lb-dup-no-preview'; d.innerHTML = '&#128248;<br>No preview'; img.replaceWith(d); };
+          img.src = `/thumbnail?path=${encodeURIComponent(m.path)}&size=700`;
+          panel.innerHTML = `<div class="lb-info">
+            <span class="lb-filename">${esc(m.name)}</span>
+            <span class="lb-meta">${fmt(m.size)}</span>
+            <label class="lb-check">
+              <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="lbToggleCheck(${m.registryIdx}, this.checked)">
+              Mark for deletion
+            </label>
+          </div>`;
+          panel.insertBefore(img, panel.firstChild);
+          container.appendChild(panel);
+        });
+        body.innerHTML = '';
+        body.appendChild(container);
         counter.textContent = `Group ${lb.groupIdx + 1} of ${dupGroupsData.length}`;
         prev.style.visibility = lb.groupIdx > 0 ? 'visible' : 'hidden';
         next.style.visibility = lb.groupIdx < dupGroupsData.length - 1 ? 'visible' : 'hidden';
@@ -1164,7 +1189,12 @@
     });
 
     document.getElementById('pathInput').addEventListener('keydown', e => {
-      if (e.key === 'Enter') startScan();
+      if (e.key === 'Enter') { e.preventDefault(); startScan(); }
+    });
+    document.getElementById('pathInput').addEventListener('paste', e => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\n/g, '');
+      document.execCommand('insertText', false, text);
     });
 
     // Heartbeat: tell the server we're still open; closing the tab stops pings → server exits

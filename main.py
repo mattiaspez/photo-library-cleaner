@@ -18,7 +18,7 @@ from send2trash import send2trash
 app = FastAPI()
 
 _heartbeat_ts = None  # float timestamp of last heartbeat
-_HEARTBEAT_TIMEOUT = 10  # seconds of silence before shutting down
+_HEARTBEAT_TIMEOUT = 60  # seconds of silence before shutting down
 
 
 @app.on_event("startup")
@@ -177,8 +177,6 @@ async def stream_file(path: str = Query(...)):
 
 def _make_thumbnail(p, size):
     with Image.open(p) as img:
-        if p.suffix.lower() in {".jpg", ".jpeg"}:
-            img.draft("RGB", (size * 2, size * 2))
         if img.mode not in ("RGB", "RGBA", "L"):
             img = img.convert("RGB")
         img.thumbnail((size, size), Image.LANCZOS)
