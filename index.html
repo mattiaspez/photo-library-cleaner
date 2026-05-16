@@ -1213,7 +1213,7 @@
       try {
         const res = await fetch('/browse');
         const { path } = await res.json();
-        if (path) document.getElementById('pathInput').value = path;
+        if (path) { document.getElementById('pathInput').value = path; startScan(); }
       } catch (e) {
         // silently ignore
       } finally {
