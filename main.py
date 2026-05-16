@@ -1,6 +1,7 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+import asyncio
 import uuid
 import subprocess
 import threading
@@ -173,6 +174,19 @@ async def stream_file(path: str = Query(...)):
     return FileResponse(str(p), media_type=media_type)
 
 
+def _make_thumbnail(p, size):
+    with Image.open(p) as img:
+        if p.suffix.lower() in {".jpg", ".jpeg"}:
+            img.draft("RGB", (size * 2, size * 2))
+        if img.mode not in ("RGB", "RGBA", "L"):
+            img = img.convert("RGB")
+        img.thumbnail((size, size), Image.LANCZOS)
+        buf = BytesIO()
+        fmt = "PNG" if img.mode == "RGBA" else "JPEG"
+        img.save(buf, format=fmt)
+        return buf.getvalue(), fmt
+
+
 @app.get("/thumbnail")
 async def thumbnail(path: str = Query(...), size: int = 200):
     p = Path(path)
@@ -181,15 +195,9 @@ async def thumbnail(path: str = Query(...), size: int = 200):
     if p.suffix.lower() not in IMAGE_EXTS:
         raise HTTPException(400, "Not an image")
     try:
-        with Image.open(p) as img:
-            if img.mode not in ("RGB", "RGBA", "L"):
-                img = img.convert("RGB")
-            img.thumbnail((size, size), Image.LANCZOS)
-            buf = BytesIO()
-            fmt = "PNG" if img.mode == "RGBA" else "JPEG"
-            img.save(buf, format=fmt)
-            buf.seek(0)
-            return StreamingResponse(buf, media_type=f"image/{fmt.lower()}")
+        loop = asyncio.get_running_loop()
+        data, fmt = await loop.run_in_executor(None, _make_thumbnail, p, size)
+        return StreamingResponse(BytesIO(data), media_type=f"image/{fmt.lower()}")
     except Exception as exc:
         raise HTTPException(400, f"Cannot open image: {exc}")
 
