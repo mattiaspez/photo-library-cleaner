@@ -581,16 +581,16 @@
       <strong id="selSize">0 B</strong>
     </div>
     <div class="action-toggle">
-      <button class="action-option active" id="modeDelete" onclick="setActionMode('delete')">Delete</button>
+      <button class="action-option active" id="modeDelete" onclick="setActionMode('delete')">Move to Trash</button>
       <button class="action-option" id="modeMove" onclick="setActionMode('move')">Move to subfolder</button>
     </div>
-    <button class="btn btn-danger" id="actionBtn" onclick="confirmAction()" disabled>Delete Selected</button>
+    <button class="btn btn-danger" id="actionBtn" onclick="confirmAction()" disabled>Move to Trash</button>
   </div>
 
   <!-- Confirm modal -->
   <div class="modal-backdrop hidden" id="modal">
     <div class="modal">
-      <h3 id="modalTitle">Permanently delete files?</h3>
+      <h3 id="modalTitle">Move files to Trash?</h3>
       <p id="modalMsg"></p>
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -962,7 +962,7 @@
       const btn = document.getElementById('actionBtn');
       btn.disabled = count === 0;
       if (actionMode === 'delete') {
-        btn.textContent = 'Delete Selected';
+        btn.textContent = 'Move to Trash';
         btn.className = 'btn btn-danger';
       } else {
         btn.textContent = 'Move Selected';
@@ -978,11 +978,11 @@
       for (const idx of selected) bytes += fileRegistry[idx]?.size || 0;
 
       if (actionMode === 'delete') {
-        document.getElementById('modalTitle').textContent = 'Permanently delete files?';
+        document.getElementById('modalTitle').textContent = 'Move files to Trash?';
         document.getElementById('modalMsg').textContent =
-          `This will permanently delete ${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)}). This cannot be undone.`;
+          `This will move ${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)}) to the Trash. You can recover them from there if needed.`;
         document.getElementById('modalConfirmBtn').className = 'btn btn-danger';
-        document.getElementById('modalConfirmBtn').textContent = 'Delete';
+        document.getElementById('modalConfirmBtn').textContent = 'Move to Trash';
       } else {
         const libraryPath = document.getElementById('pathInput').value.trim();
         document.getElementById('modalTitle').textContent = 'Move files to subfolder?';

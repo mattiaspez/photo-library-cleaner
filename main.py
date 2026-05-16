@@ -13,6 +13,7 @@ from io import BytesIO
 
 from scanner import build_report
 from PIL import Image
+from send2trash import send2trash
 
 app = FastAPI()
 
@@ -124,7 +125,7 @@ async def delete_files(req: DeleteRequest):
     errors = []
     for path_str in req.paths:
         try:
-            Path(path_str).unlink()
+            send2trash(path_str)
             deleted.append(path_str)
         except Exception as exc:
             errors.append({"path": path_str, "error": str(exc)})
