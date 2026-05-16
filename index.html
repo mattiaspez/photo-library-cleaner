@@ -505,7 +505,7 @@
       flex: 1;
     }
     .lb-dup-img {
-      max-width: calc(50vw - 90px);
+      max-width: calc((100vw - 120px) / var(--n, 2) - 20px);
       max-height: calc(100vh - 160px);
       object-fit: contain;
       border-radius: 6px;
@@ -1133,7 +1133,7 @@
             </div>`;
         }).join('');
 
-        body.innerHTML = `<div class="lb-dup-panels">${panels}</div>`;
+        body.innerHTML = `<div class="lb-dup-panels" style="--n:${group.length}">${panels}</div>`;
         counter.textContent = `Group ${lb.groupIdx + 1} of ${dupGroupsData.length}`;
         prev.style.visibility = lb.groupIdx > 0 ? 'visible' : 'hidden';
         next.style.visibility = lb.groupIdx < dupGroupsData.length - 1 ? 'visible' : 'hidden';
