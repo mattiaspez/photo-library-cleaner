@@ -652,7 +652,10 @@
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
 
+    let activeTab = null;
+
     function switchTab(tab) {
+      activeTab = tab;
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
     }
@@ -851,6 +854,7 @@
       });
 
       document.getElementById('results').innerHTML = html;
+      activeTab = tabDefs[0]?.id || null;
       document.getElementById('footer').style.display = 'flex';
       updateCounter();
     }
@@ -931,6 +935,7 @@
         </div>`;
       }).join('');
 
+      tabFileIndices['duplicates'] = allIndices;
       const totalFiles = groups.reduce((n, g) => n + g.length, 0);
       const indicesJson = JSON.stringify(allIndices);
       return `
@@ -979,24 +984,30 @@
       }
     }
 
+    function activeSelected() {
+      if (!activeTab || !tabFileIndices[activeTab]) return [...selected];
+      const tabSet = new Set(tabFileIndices[activeTab]);
+      return [...selected].filter(i => tabSet.has(i));
+    }
+
     // ── Confirm / delete / move ───────────────────────────────────────────────
 
     function confirmAction() {
-      const count = selected.size;
+      const indices = activeSelected();
+      const count = indices.length;
       let bytes = 0;
-      for (const idx of selected) bytes += fileRegistry[idx]?.size || 0;
+      for (const idx of indices) bytes += fileRegistry[idx]?.size || 0;
 
+      const summary = `${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)})`;
       if (actionMode === 'delete') {
-        document.getElementById('modalTitle').textContent = 'Move files to Trash?';
-        document.getElementById('modalMsg').textContent =
-          `This will move ${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)}) to the Trash. You can recover them from there if needed.`;
+        document.getElementById('modalTitle').textContent = `Move ${summary} to Trash?`;
+        document.getElementById('modalMsg').textContent = 'Files will be sent to the Trash. You can recover them from there if needed.';
         document.getElementById('modalConfirmBtn').className = 'btn btn-danger';
         document.getElementById('modalConfirmBtn').textContent = 'Move to Trash';
       } else {
         const libraryPath = document.getElementById('pathInput').value.trim();
-        document.getElementById('modalTitle').textContent = 'Move files to subfolder?';
-        document.getElementById('modalMsg').textContent =
-          `This will move ${count} file${count !== 1 ? 's' : ''} (${fmt(bytes)}) into "${libraryPath}/_cleaner/". Files are grouped by category and can be restored from there.`;
+        document.getElementById('modalTitle').textContent = `Move ${summary} to subfolder?`;
+        document.getElementById('modalMsg').textContent = `Files will be moved into "${libraryPath}/_cleaner/", grouped by category. You can restore them from there.`;
         document.getElementById('modalConfirmBtn').className = 'btn btn-primary';
         document.getElementById('modalConfirmBtn').textContent = 'Move';
       }
@@ -1017,7 +1028,7 @@
     }
 
     async function doDelete() {
-      const paths = [...selected].map(i => fileRegistry[i].path);
+      const paths = activeSelected().map(i => fileRegistry[i].path);
       try {
         await fetch('/delete', {
           method: 'POST',
@@ -1032,7 +1043,7 @@
 
     async function doMove() {
       const libraryPath = document.getElementById('pathInput').value.trim();
-      const moves = [...selected].map(i => {
+      const moves = activeSelected().map(i => {
         const f = fileRegistry[i];
         return { path: f.path, destination: libraryPath + '/_cleaner/' + f.category };
       });
@@ -1197,12 +1208,11 @@
       document.execCommand('insertText', false, text);
     });
 
-    // Heartbeat: tell the server we're still open; closing the tab stops pings → server exits
-    function sendHeartbeat() {
-      fetch('/heartbeat', { method: 'POST', keepalive: true }).catch(() => {});
-    }
-    sendHeartbeat();
-    setInterval(sendHeartbeat, 4000);
+    // Tell the server we connected, and send a shutdown beacon when the tab closes
+    fetch('/heartbeat', { method: 'POST' }).catch(() => {});
+    window.addEventListener('beforeunload', () => {
+      navigator.sendBeacon('/shutdown');
+    });
 
     // ── Browse ────────────────────────────────────────────────────────────────
 

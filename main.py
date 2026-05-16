@@ -8,6 +8,8 @@ import threading
 import time
 import signal
 import os
+import hashlib
+import tempfile
 from pathlib import Path
 from io import BytesIO
 
@@ -15,35 +17,46 @@ from scanner import build_report
 from PIL import Image
 from send2trash import send2trash
 
+_THUMB_CACHE = Path(tempfile.gettempdir()) / "photo_cleaner_thumbs"
+_THUMB_CACHE.mkdir(exist_ok=True)
+
 app = FastAPI()
 
-_heartbeat_ts = None  # float timestamp of last heartbeat
-_HEARTBEAT_TIMEOUT = 60  # seconds of silence before shutting down
+_browser_connected = False
+_IDLE_TIMEOUT = 300  # 5-minute fallback if beacon never fires
 
 
 @app.on_event("startup")
-async def _start_heartbeat_watcher():
+async def _start_idle_watcher():
     def watch():
-        # Wait up to 60 s for the browser to open and send its first ping
         for _ in range(60):
-            if _heartbeat_ts is not None:
+            if _browser_connected:
                 break
             time.sleep(1)
         else:
             return  # browser never connected — leave server running
-        # Browser connected; shut down when it goes quiet
+        # Browser connected; exit if idle too long with no active scan
+        idle_since = time.time()
         while True:
-            time.sleep(2)
-            if time.time() - _heartbeat_ts > _HEARTBEAT_TIMEOUT:
-                os.kill(os.getpid(), signal.SIGTERM)
-                return
+            time.sleep(5)
+            if _browser_connected:
+                idle_since = time.time()
+            if time.time() - idle_since > _IDLE_TIMEOUT:
+                if not any(j.get('status') == 'running' for j in _jobs.values()):
+                    os._exit(0)
     threading.Thread(target=watch, daemon=True).start()
 
 
 @app.post("/heartbeat")
 async def heartbeat():
-    global _heartbeat_ts
-    _heartbeat_ts = time.time()
+    global _browser_connected
+    _browser_connected = True
+    return {"ok": True}
+
+
+@app.post("/shutdown")
+async def shutdown():
+    threading.Thread(target=lambda: (time.sleep(0.3), os._exit(0)), daemon=True).start()
     return {"ok": True}
 
 _jobs: dict = {}
@@ -176,14 +189,27 @@ async def stream_file(path: str = Query(...)):
 
 
 def _make_thumbnail(p, size):
+    st = p.stat()
+    key = hashlib.md5(f"{p}:{size}:{st.st_mtime}:{st.st_size}".encode()).hexdigest()
+    cached = _THUMB_CACHE / f"{key}.jpg"
+    if cached.exists():
+        return cached.read_bytes(), "JPEG"
+
     with Image.open(p) as img:
-        if img.mode not in ("RGB", "RGBA", "L"):
+        if p.suffix.lower() in (".jpg", ".jpeg"):
+            try:
+                img.draft("RGB", (size * 2, size * 2))
+            except Exception:
+                pass
+        if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
-        img.thumbnail((size, size), Image.LANCZOS)
+        img.thumbnail((size, size), Image.BILINEAR)
         buf = BytesIO()
-        fmt = "PNG" if img.mode == "RGBA" else "JPEG"
-        img.save(buf, format=fmt)
-        return buf.getvalue(), fmt
+        img.save(buf, format="JPEG", quality=85)
+        data = buf.getvalue()
+
+    cached.write_bytes(data)
+    return data, "JPEG"
 
 
 @app.get("/thumbnail")
@@ -195,9 +221,10 @@ async def thumbnail(path: str = Query(...), size: int = 200):
         raise HTTPException(400, "Not an image")
     try:
         loop = asyncio.get_running_loop()
-        data, fmt = await loop.run_in_executor(None, _make_thumbnail, p, size)
-        return StreamingResponse(BytesIO(data), media_type=f"image/{fmt.lower()}")
+        data, _ = await loop.run_in_executor(None, _make_thumbnail, p, size)
+        return StreamingResponse(BytesIO(data), media_type="image/jpeg")
     except Exception as exc:
+        print(f"[thumbnail error] {p}: {exc}")
         raise HTTPException(400, f"Cannot open image: {exc}")
 
 
