@@ -244,16 +244,20 @@ def build_report(root: str, hash_threshold: int = 6, progress_state: dict = None
 
     dup_groups = find_duplicates(hashes, threshold=hash_threshold)
 
-    # Enrich duplicate groups with file sizes
+    # Enrich duplicate groups with file sizes and creation dates
     enriched_groups = []
     for group in dup_groups:
         members = []
         for path in group:
             try:
-                size = Path(path).stat().st_size
+                st = Path(path).stat()
+                size = st.st_size
+                # st_birthtime is macOS creation time; fall back to mtime on other platforms
+                date = getattr(st, "st_birthtime", None) or st.st_mtime
             except OSError:
                 size = 0
-            members.append({"path": path, "name": Path(path).name, "size": size})
+                date = 0.0
+            members.append({"path": path, "name": Path(path).name, "size": size, "date": date})
         enriched_groups.append(members)
 
     report = {

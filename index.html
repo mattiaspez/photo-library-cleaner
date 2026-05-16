@@ -762,7 +762,7 @@
       screenshots.forEach(f => preSelectPaths.add(f.path));
       junk.forEach(f => preSelectPaths.add(f.path));
       dups.forEach(group => {
-        const sorted = [...group].sort((a, b) => b.size - a.size);
+        const sorted = [...group].sort((a, b) => (a.date - b.date) || (b.size - a.size));
         sorted.slice(1).forEach(f => preSelectPaths.add(f.path));
       });
 
@@ -878,7 +878,7 @@
       dupGroupsData = [];
       const allIndices = [];
       const groupHtml = groups.map((group, gi) => {
-        const sorted = [...group].sort((a, b) => b.size - a.size);
+        const sorted = [...group].sort((a, b) => (a.date - b.date) || (b.size - a.size));
         const groupMembers = [];
         const members = sorted.map(f => {
           const idx = reg(f.path, f.size, 'duplicates');
