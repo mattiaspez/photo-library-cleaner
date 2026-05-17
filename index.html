@@ -142,11 +142,33 @@
     .panel-toolbar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 8px;
       padding: 10px 18px;
       border-bottom: 1px solid #f2f2f2;
+      flex-wrap: wrap;
     }
-    .panel-meta { font-size: 12px; color: #999; }
+    .panel-meta { font-size: 12px; color: #999; margin-right: auto; }
+    .sort-select {
+      font-size: 12px;
+      border: 1px solid #d8d8d8;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-family: inherit;
+      color: #444;
+      background: #fff;
+      cursor: pointer;
+    }
+    .name-filter {
+      font-size: 12px;
+      border: 1px solid #d8d8d8;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-family: inherit;
+      color: #1d1d1f;
+      width: 160px;
+      outline: none;
+    }
+    .name-filter:focus { border-color: #0071e3; }
     .select-all-btn {
       font-size: 12px;
       background: none;
@@ -533,6 +555,16 @@
       color: rgba(255,255,255,0.3);
       font-size: 13px;
     }
+    .lb-spinner {
+      width: 38px;
+      height: 38px;
+      border: 3px solid rgba(255,255,255,0.12);
+      border-top-color: rgba(255,255,255,0.65);
+      border-radius: 50%;
+      animation: lb-spin 0.7s linear infinite;
+      margin: 60px auto;
+    }
+    @keyframes lb-spin { to { transform: rotate(360deg); } }
 
     .lb-info {
       display: flex;
@@ -629,6 +661,15 @@
     let lb = null; // null | {mode:'single', indices, pos} | {mode:'dup', groupIdx}
     let tabFileIndices = {}; // {category: [registryIdx, ...]}
     let dupGroupsData = [];  // [[{registryIdx, path, name, size}, ...], ...]
+
+    // Sort / filter state
+    let tabRawData     = {}; // {category: [{...file, _idx}]}
+    let tabSortState   = {}; // {category: 'name-asc'|'name-desc'|'size-desc'|'size-asc'}
+    let tabFilterState = {}; // {category: 'all'|'selected'|'unselected'}
+    let tabSearchState = {}; // {category: string}
+    let dupRawGroups  = []; // raw groups from scan
+    let dupSortState  = 'count-desc'; // 'count-desc'|'size-desc'
+    let dupSearchState = '';
 
     const IMAGE_RE = /\.(jpe?g|png|gif|webp|tiff?|bmp|heic)$/i;
     const VIDEO_RE = /\.(mp4|mov|avi|mkv|m4v|3gp|wmv|flv|mts|m2ts)$/i;
@@ -857,98 +898,282 @@
       activeTab = tabDefs[0]?.id || null;
       document.getElementById('footer').style.display = 'flex';
       updateCounter();
+
+    }
+
+    function buildFileItemHtml(f, category) {
+      const idx = f._idx;
+      const isSelected = selected.has(idx);
+      let badgeHtml = '';
+      if (f.reason === 'burst') badgeHtml = '<span class="badge badge-burst">burst</span>';
+      else if (f.reason === 'live_photo_sidecar') badgeHtml = '<span class="badge badge-sidecar">live sidecar</span>';
+      else if (f.reason === 'corrupt_or_small') badgeHtml = '<span class="badge badge-corrupt">corrupt/small</span>';
+      let thumbHtml = '';
+      if (IMAGE_RE.test(f.path)) {
+        thumbHtml = `<img class="file-thumb" loading="lazy" src="/thumbnail?path=${encodeURIComponent(f.path)}" onclick="openFileLightbox(${idx})" onerror="this.style.visibility='hidden'">`;
+      } else if (VIDEO_RE.test(f.path)) {
+        thumbHtml = `<div class="file-thumb-placeholder" onclick="openFileLightbox(${idx})">&#127909;</div>`;
+      }
+      return `<li class="file-item">
+        <input type="checkbox" data-idx="${idx}" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
+        ${thumbHtml}
+        <div class="file-info">
+          <div class="file-name lb-trigger" onclick="openFileLightbox(${idx})">${esc(f.name)}${badgeHtml}</div>
+          <div class="file-path">${esc(f.path)}</div>
+        </div>
+        <div class="file-size">${fmt(f.size)}</div>
+      </li>`;
+    }
+
+    function getSortedFiltered(category) {
+      let result = [...(tabRawData[category] || [])];
+      const search = (tabSearchState[category] || '').toLowerCase();
+      if (search) result = result.filter(f => f.name.toLowerCase().includes(search));
+      const filterVal = tabFilterState[category] || 'all';
+      if (filterVal === 'selected')        result = result.filter(f =>  selected.has(f._idx));
+      else if (filterVal === 'unselected') result = result.filter(f => !selected.has(f._idx));
+      const sort = tabSortState[category] || 'name-asc';
+      if      (sort === 'name-asc')  result.sort((a, b) => a.name.localeCompare(b.name));
+      else if (sort === 'name-desc') result.sort((a, b) => b.name.localeCompare(a.name));
+      else if (sort === 'size-desc') result.sort((a, b) => b.size - a.size);
+      else if (sort === 'size-asc')  result.sort((a, b) => a.size - b.size);
+      return result;
+    }
+
+    function setSortFilter(category, type, value) {
+      if (type === 'sort')   tabSortState[category]   = value;
+      else if (type === 'filter') tabFilterState[category] = value;
+      else if (type === 'search') tabSearchState[category] = value;
+      rerenderFileList(category);
+    }
+
+    function setDupSearch(value) {
+      dupSearchState = value;
+      applyDupSearch();
+    }
+
+    function applyDupSearch() {
+      const search = dupSearchState.toLowerCase().trim();
+      let anyVisible = false;
+      document.querySelectorAll('.dup-group').forEach(groupEl => {
+        let groupHasMatch = false;
+        groupEl.querySelectorAll('.dup-member[data-name]').forEach(memberEl => {
+          const matches = !search || memberEl.dataset.name.includes(search);
+          memberEl.style.display = matches ? '' : 'none';
+          if (matches) groupHasMatch = true;
+        });
+        groupEl.style.display = groupHasMatch ? '' : 'none';
+        if (groupHasMatch) anyVisible = true;
+      });
+      const container = document.getElementById('dup-list-container');
+      if (!container) return;
+      let msg = container.querySelector('.dup-search-empty');
+      if (!anyVisible && search) {
+        if (!msg) {
+          msg = document.createElement('div');
+          msg.className = 'empty-state dup-search-empty';
+          container.appendChild(msg);
+        }
+        msg.textContent = 'No files match your filter.';
+        msg.style.display = '';
+      } else if (msg) {
+        msg.style.display = 'none';
+      }
+    }
+
+    function rerenderFileList(category) {
+      const ul = document.getElementById(`file-list-${category}`);
+      if (!ul) return;
+      const items = getSortedFiltered(category);
+      ul.innerHTML = items.length
+        ? items.map(f => buildFileItemHtml(f, category)).join('')
+        : '<li style="padding:20px 18px;color:#999;font-size:13px;">No files match your filter.</li>';
+    }
+
+    function setDupSort(value) {
+      dupSortState = value;
+      rerenderDupList();
+    }
+
+    function buildDupMembersHtml(members, gi) {
+      return members.map(m => {
+        const idx = m.registryIdx;
+        const thumb = IMAGE_RE.test(m.path)
+          ? `<img class="dup-thumb" src="/thumbnail?path=${encodeURIComponent(m.path)}" onclick="openDupLightbox(${gi})" onerror="this.outerHTML='<div class=dup-thumb-placeholder>&#128248;</div>'">`
+          : `<div class="dup-thumb-placeholder">&#128248;</div>`;
+        return `<div class="dup-member" data-name="${esc(m.name.toLowerCase())}">
+          <input type="checkbox" data-idx="${idx}" ${selected.has(idx) ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
+          ${thumb}
+          <div class="file-info">
+            <div class="file-name lb-trigger" onclick="openDupLightbox(${gi})">${esc(m.name)}</div>
+            <div class="file-path">${esc(m.path)}</div>
+          </div>
+          <div class="file-size">${fmt(m.size)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function rerenderDupList() {
+      const container = document.getElementById('dup-list-container');
+      if (!container) return;
+      const allGroups = [...dupRawGroups];
+      if (dupSortState === 'size-desc') allGroups.sort((a, b) => b._totalSize - a._totalSize);
+      else allGroups.sort((a, b) => b._members.length - a._members.length);
+      dupGroupsData = allGroups.map(g => g._members);
+      container.innerHTML = allGroups.map((g, gi) => {
+        return `<div class="dup-group">
+          <div class="dup-group-label">Group ${gi + 1} &middot; ${g._members.length} files
+            <button class="lb-view-btn" onclick="openDupLightbox(${gi})">View</button>
+          </div>
+          <div class="dup-members">${buildDupMembersHtml(g._members, gi)}</div>
+        </div>`;
+      }).join('');
+      applyDupSearch();
+    }
+
+    function getSortedDupGroups() {
+      const groups = [...dupRawGroups];
+      if (dupSortState === 'size-desc') groups.sort((a, b) => b._totalSize - a._totalSize);
+      else groups.sort((a, b) => b._members.length - a._members.length);
+      return groups;
     }
 
     function buildFilePanel(files, category, preSelectPaths, totalBytes) {
-      const indices = [];
-      const items = files.map(f => {
+      const enriched = files.map(f => {
         const idx = reg(f.path, f.size, category);
-        const isSelected = preSelectPaths.has(f.path);
-        if (isSelected) selected.add(idx);
-        indices.push(idx);
-        let badgeHtml = '';
-        if (f.reason === 'burst') badgeHtml = '<span class="badge badge-burst">burst</span>';
-        else if (f.reason === 'live_photo_sidecar') badgeHtml = '<span class="badge badge-sidecar">live sidecar</span>';
-        else if (f.reason === 'corrupt_or_small') badgeHtml = '<span class="badge badge-corrupt">corrupt/small</span>';
-        let thumbHtml = '';
-        if (IMAGE_RE.test(f.path)) {
-          thumbHtml = `<img class="file-thumb" loading="lazy" src="/thumbnail?path=${encodeURIComponent(f.path)}" onclick="openFileLightbox(${idx})" onerror="this.style.visibility='hidden'">`;
-        } else if (VIDEO_RE.test(f.path)) {
-          thumbHtml = `<div class="file-thumb-placeholder" onclick="openFileLightbox(${idx})">&#127909;</div>`;
-        }
-        return `
-          <li class="file-item">
-            <input type="checkbox" data-idx="${idx}" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
-            ${thumbHtml}
-            <div class="file-info">
-              <div class="file-name lb-trigger" onclick="openFileLightbox(${idx})">${esc(f.name)}${badgeHtml}</div>
-              <div class="file-path">${esc(f.path)}</div>
-            </div>
-            <div class="file-size">${fmt(f.size)}</div>
-          </li>`;
-      }).join('');
+        if (preSelectPaths.has(f.path)) selected.add(idx);
+        return { ...f, _idx: idx };
+      });
+      tabRawData[category]    = enriched;
+      tabFileIndices[category] = enriched.map(f => f._idx);
+      if (!tabSortState[category])   tabSortState[category]   = 'name-asc';
+      if (!tabFilterState[category]) tabFilterState[category] = 'all';
+      if (!tabSearchState[category]) tabSearchState[category] = '';
 
-      tabFileIndices[category] = indices;
-      const indicesJson = JSON.stringify(indices);
+      const indicesJson = JSON.stringify(tabFileIndices[category]);
+      const sort   = tabSortState[category];
+      const filter = tabFilterState[category];
+      const search = tabSearchState[category];
+      const items  = getSortedFiltered(category).map(f => buildFileItemHtml(f, category)).join('');
+
       return `
         <div class="panel-card">
           <div class="panel-toolbar">
             <span class="panel-meta">${files.length} files &middot; ${fmt(totalBytes)}</span>
-            <button class="select-all-btn" onclick="selectAll(${indicesJson})">Select all</button>
+            <input class="name-filter" type="search" placeholder="Filter by name…" value="${esc(search)}">
+            <select class="sort-select" onchange="setSortFilter('${category}','sort',this.value)">
+              <option value="name-asc"  ${sort==='name-asc'  ?'selected':''}>Name A→Z</option>
+              <option value="name-desc" ${sort==='name-desc' ?'selected':''}>Name Z→A</option>
+              <option value="size-desc" ${sort==='size-desc' ?'selected':''}>Largest first</option>
+              <option value="size-asc"  ${sort==='size-asc'  ?'selected':''}>Smallest first</option>
+            </select>
+            <select class="sort-select" onchange="setSortFilter('${category}','filter',this.value)">
+              <option value="all"        ${filter==='all'        ?'selected':''}>All files</option>
+              <option value="selected"   ${filter==='selected'   ?'selected':''}>Selected only</option>
+              <option value="unselected" ${filter==='unselected' ?'selected':''}>Unselected only</option>
+            </select>
+            <button class="select-all-btn" onclick="selectFiltered('${category}')">Select all</button>
+            <button class="select-all-btn" onclick="deselectFiltered('${category}')">Deselect all</button>
           </div>
-          <ul class="file-list">${items}</ul>
+          <ul class="file-list" id="file-list-${category}">${items}</ul>
         </div>`;
     }
 
     function buildDupPanel(groups, preSelectPaths, totalBytes) {
-      dupGroupsData = [];
+      dupRawGroups = [];
       const allIndices = [];
-      const groupHtml = groups.map((group, gi) => {
+
+      groups.forEach(group => {
         const sorted = [...group].sort((a, b) => (a.date - b.date) || (b.size - a.size));
-        const groupMembers = [];
-        const members = sorted.map(f => {
+        let totalSize = 0;
+        const members = [];
+        sorted.forEach(f => {
           const idx = reg(f.path, f.size, 'duplicates');
-          const isSelected = preSelectPaths.has(f.path);
-          if (isSelected) selected.add(idx);
+          if (preSelectPaths.has(f.path)) selected.add(idx);
           allIndices.push(idx);
-          groupMembers.push({ registryIdx: idx, path: f.path, name: f.name, size: f.size });
-          const thumb = IMAGE_RE.test(f.path)
-            ? `<img class="dup-thumb" src="/thumbnail?path=${encodeURIComponent(f.path)}" onclick="openDupLightbox(${gi})" onerror="this.outerHTML='<div class=dup-thumb-placeholder>&#128248;</div>'">`
-            : `<div class="dup-thumb-placeholder">&#128248;</div>`;
-          return `
-            <div class="dup-member">
-              <input type="checkbox" data-idx="${idx}" ${isSelected ? 'checked' : ''} onchange="toggleIdx(${idx}, this.checked)">
-              ${thumb}
-              <div class="file-info">
-                <div class="file-name lb-trigger" onclick="openDupLightbox(${gi})">${esc(f.name)}</div>
-                <div class="file-path">${esc(f.path)}</div>
-              </div>
-              <div class="file-size">${fmt(f.size)}</div>
-            </div>`;
-        }).join('');
-        dupGroupsData.push(groupMembers);
-        return `<div class="dup-group">
-          <div class="dup-group-label">Group ${gi + 1} &middot; ${sorted.length} files
-            <button class="lb-view-btn" onclick="openDupLightbox(${gi})">View</button>
-          </div>
-          <div class="dup-members">${members}</div>
-        </div>`;
-      }).join('');
+          totalSize += f.size;
+          members.push({ registryIdx: idx, path: f.path, name: f.name, size: f.size });
+        });
+        dupRawGroups.push({ _members: members, _totalSize: totalSize });
+      });
 
       tabFileIndices['duplicates'] = allIndices;
       const totalFiles = groups.reduce((n, g) => n + g.length, 0);
       const indicesJson = JSON.stringify(allIndices);
+
+      // Build initial sorted view
+      const sortedGroups = getSortedDupGroups();
+      dupGroupsData = sortedGroups.map(g => g._members);
+
+      const groupHtml = sortedGroups.map((g, gi) => `
+        <div class="dup-group">
+          <div class="dup-group-label">Group ${gi + 1} &middot; ${g._members.length} files
+            <button class="lb-view-btn" onclick="openDupLightbox(${gi})">View</button>
+          </div>
+          <div class="dup-members">${buildDupMembersHtml(g._members, gi)}</div>
+        </div>`).join('');
+
       return `
         <div class="panel-card">
           <div class="panel-toolbar">
             <span class="panel-meta">${totalFiles} files &middot; ${fmt(totalBytes)}</span>
-            <button class="select-all-btn" onclick="selectAll(${indicesJson})">Select all</button>
+            <input class="name-filter" type="search" placeholder="Filter by name…" value="${esc(dupSearchState)}">
+            <select class="sort-select" onchange="setDupSort(this.value)">
+              <option value="count-desc" ${dupSortState==='count-desc'?'selected':''}>Most files first</option>
+              <option value="size-desc"  ${dupSortState==='size-desc' ?'selected':''}>Largest group first</option>
+            </select>
+            <button class="select-all-btn" onclick="selectFilteredDups()">Select all</button>
+            <button class="select-all-btn" onclick="deselectFilteredDups()">Deselect all</button>
           </div>
-          ${groupHtml || '<div class="empty-state">No duplicates found</div>'}
+          <div id="dup-list-container">
+            ${groupHtml || '<div class="empty-state">No duplicates found</div>'}
+          </div>
         </div>`;
     }
 
     // ── Selection ─────────────────────────────────────────────────────────────
+
+    function selectFiltered(category) {
+      getSortedFiltered(category).forEach(f => {
+        selected.add(f._idx);
+        const cb = document.querySelector(`input[data-idx="${f._idx}"]`);
+        if (cb) cb.checked = true;
+      });
+      updateCounter();
+    }
+
+    function deselectFiltered(category) {
+      getSortedFiltered(category).forEach(f => {
+        selected.delete(f._idx);
+        const cb = document.querySelector(`input[data-idx="${f._idx}"]`);
+        if (cb) cb.checked = false;
+      });
+      updateCounter();
+    }
+
+    function selectFilteredDups() {
+      document.querySelectorAll('.dup-member[data-name]').forEach(memberEl => {
+        if (memberEl.style.display === 'none') return;
+        const cb = memberEl.querySelector('input[data-idx]');
+        if (!cb) return;
+        const idx = parseInt(cb.dataset.idx);
+        selected.add(idx);
+        cb.checked = true;
+      });
+      updateCounter();
+    }
+
+    function deselectFilteredDups() {
+      document.querySelectorAll('.dup-member[data-name]').forEach(memberEl => {
+        if (memberEl.style.display === 'none') return;
+        const cb = memberEl.querySelector('input[data-idx]');
+        if (!cb) return;
+        const idx = parseInt(cb.dataset.idx);
+        selected.delete(idx);
+        cb.checked = false;
+      });
+      updateCounter();
+    }
 
     function toggleIdx(idx, checked) {
       if (checked) selected.add(idx);
@@ -961,6 +1186,15 @@
         selected.add(i);
         const cb = document.querySelector(`input[data-idx="${i}"]`);
         if (cb) cb.checked = true;
+      });
+      updateCounter();
+    }
+
+    function deselectAll(indices) {
+      indices.forEach(i => {
+        selected.delete(i);
+        const cb = document.querySelector(`input[data-idx="${i}"]`);
+        if (cb) cb.checked = false;
       });
       updateCounter();
     }
@@ -1141,12 +1375,15 @@
           v.className = 'lb-video'; v.src = `/stream?path=${encodeURIComponent(f.path)}`; v.controls = true;
           slot.replaceWith(v);
         } else if (IMAGE_RE.test(f.path)) {
+          const spinner = document.createElement('div');
+          spinner.className = 'lb-spinner';
+          slot.replaceWith(spinner);
           const img = document.createElement('img');
           img.className = 'lb-img';
           img.alt = f.name;
-          img.onerror = () => { const d = document.createElement('div'); d.className = 'lb-no-preview'; d.textContent = 'No preview available'; img.replaceWith(d); };
+          img.onload  = () => spinner.replaceWith(img);
+          img.onerror = () => { const d = document.createElement('div'); d.className = 'lb-no-preview'; d.textContent = 'No preview available'; spinner.replaceWith(d); };
           img.src = `/thumbnail?path=${encodeURIComponent(f.path)}&size=800`;
-          slot.replaceWith(img);
         } else {
           const d = document.createElement('div'); d.className = 'lb-no-preview'; d.textContent = 'No preview available';
           slot.replaceWith(d);
@@ -1165,11 +1402,6 @@
           const isSelected = selected.has(m.registryIdx);
           const panel = document.createElement('div');
           panel.className = 'lb-dup-panel';
-          const img = document.createElement('img');
-          img.className = 'lb-dup-img';
-          img.alt = m.name;
-          img.onerror = () => { const d = document.createElement('div'); d.className = 'lb-dup-no-preview'; d.innerHTML = '&#128248;<br>No preview'; img.replaceWith(d); };
-          img.src = `/thumbnail?path=${encodeURIComponent(m.path)}&size=700`;
           panel.innerHTML = `<div class="lb-info">
             <span class="lb-filename">${esc(m.name)}</span>
             <span class="lb-meta">${fmt(m.size)}</span>
@@ -1178,7 +1410,15 @@
               Mark for deletion
             </label>
           </div>`;
-          panel.insertBefore(img, panel.firstChild);
+          const spinner = document.createElement('div');
+          spinner.className = 'lb-spinner';
+          panel.insertBefore(spinner, panel.firstChild);
+          const img = document.createElement('img');
+          img.className = 'lb-dup-img';
+          img.alt = m.name;
+          img.onload  = () => spinner.replaceWith(img);
+          img.onerror = () => { const d = document.createElement('div'); d.className = 'lb-dup-no-preview'; d.innerHTML = '&#128248;<br>No preview'; spinner.replaceWith(d); };
+          img.src = `/thumbnail?path=${encodeURIComponent(m.path)}&size=700`;
           container.appendChild(panel);
         });
         body.innerHTML = '';
@@ -1231,6 +1471,16 @@
         btn.textContent = 'Browse…';
       }
     }
+
+    // Single permanent listener — catches filter input events from any dynamically rendered panel
+    document.body.addEventListener('input', e => {
+      if (!e.target.classList.contains('name-filter')) return;
+      const panel = e.target.closest('[data-tab]');
+      const tab = panel?.dataset.tab;
+      if (!tab) return;
+      if (tab === 'duplicates') { dupSearchState = e.target.value; applyDupSearch(); }
+      else setSortFilter(tab, 'search', e.target.value);
+    }, true); // capture phase — fires before any child handler can stop propagation
   </script>
 </body>
 </html>
