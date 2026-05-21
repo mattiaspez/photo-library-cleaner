@@ -699,6 +699,7 @@
       activeTab = tab;
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+      updateCounter();
     }
 
     // ── Action mode ───────────────────────────────────────────────────────────
@@ -1201,7 +1202,7 @@
 
     function updateCounter() {
       let count = 0, bytes = 0;
-      for (const idx of selected) {
+      for (const idx of activeSelected()) {
         count++;
         bytes += fileRegistry[idx]?.size || 0;
       }
