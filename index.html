@@ -1263,14 +1263,15 @@
     }
 
     async function doDelete() {
-      const paths = activeSelected().map(i => fileRegistry[i].path);
+      const indices = activeSelected();
+      const paths = indices.map(i => fileRegistry[i].path);
       try {
         await fetch('/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ paths }),
         });
-        startScan();
+        removeFromUI(indices);
       } catch (e) {
         alert('Delete failed: ' + e.message);
       }
@@ -1278,7 +1279,8 @@
 
     async function doMove() {
       const libraryPath = document.getElementById('pathInput').value.trim();
-      const moves = activeSelected().map(i => {
+      const indices = activeSelected();
+      const moves = indices.map(i => {
         const f = fileRegistry[i];
         return { path: f.path, destination: libraryPath + '/_cleaner/' + f.category };
       });
@@ -1292,10 +1294,56 @@
         if (data.errors && data.errors.length > 0) {
           alert(`Moved ${data.moved.length} files. ${data.errors.length} error(s) — some files could not be moved.`);
         }
-        startScan();
+        const movedPaths = new Set((data.moved || []).map(m => m.from));
+        const movedIndices = indices.filter(i => movedPaths.has(fileRegistry[i].path));
+        removeFromUI(movedIndices);
       } catch (e) {
         alert('Move failed: ' + e.message);
       }
+    }
+
+    function removeFromUI(indices) {
+      const gone = new Set(indices);
+
+      // Remove from selection
+      for (const idx of gone) selected.delete(idx);
+
+      // Collect affected categories
+      const affected = new Set(indices.map(i => fileRegistry[i]?.category).filter(Boolean));
+
+      for (const cat of affected) {
+        if (cat === 'duplicates') {
+          dupRawGroups = dupRawGroups
+            .map(g => {
+              const members = g._members.filter(m => !gone.has(m.registryIdx));
+              const totalSize = members.reduce((s, m) => s + m.size, 0);
+              return { _members: members, _totalSize: totalSize };
+            })
+            .filter(g => g._members.length >= 2);
+          tabFileIndices['duplicates'] = dupRawGroups.flatMap(g => g._members.map(m => m.registryIdx));
+          rerenderDupList();
+        } else {
+          tabRawData[cat] = (tabRawData[cat] || []).filter(f => !gone.has(f._idx));
+          tabFileIndices[cat] = tabRawData[cat].map(f => f._idx);
+          rerenderFileList(cat);
+        }
+      }
+
+      updateTabBadges();
+      updateCounter();
+    }
+
+    function updateTabBadges() {
+      document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+        const tab = btn.dataset.tab;
+        const badge = btn.querySelector('.tab-badge');
+        if (!badge) return;
+        if (tab === 'duplicates') {
+          badge.textContent = dupRawGroups.reduce((n, g) => n + g._members.length, 0);
+        } else {
+          badge.textContent = (tabRawData[tab] || []).length;
+        }
+      });
     }
 
     // ── Lightbox ──────────────────────────────────────────────────────────────
