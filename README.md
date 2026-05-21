@@ -2,8 +2,6 @@
 
 A local macOS app that scans your photo library and helps you reclaim disk space by finding and removing duplicates, screenshots, junk files, and large videos.
 
-![Photo Library Cleaner screenshot](https://github.com/user-attachments/assets/placeholder)
-
 ## Features
 
 - **Duplicate detection** — finds identical photos using content hashing and groups them, pre-selecting the best copy to keep
